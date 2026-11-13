@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1e3a5f">
+<meta name="robots" content="noindex">
+<title>SahaTech Support Inbox</title>
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--ink:#1c2733;--mute:#64707d;--line:#e3e8ee;--navy:#1e3a5f;--green:#1b5e20;--red:#c62828;--blue:#0d47a1;--bub-me:#e8f0fe;--bub-dev:#e6f4ea}
+@media(prefers-color-scheme:dark){:root{--bg:#10161d;--card:#18212b;--ink:#e8edf2;--mute:#92a0ae;--line:#27323e;--bub-me:#1d2f4d;--bub-dev:#17382a;--blue:#8ab4f8}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI","Noto Sans Tamil",sans-serif;padding-bottom:env(safe-area-inset-bottom)}
+header{background:var(--navy);color:#fff;padding:12px 14px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
+header h1{font-size:17px;margin:0;flex:1}
+header button{background:rgba(255,255,255,.15);color:#fff;border:0;border-radius:8px;padding:7px 11px;font-size:14px}
+main{max-width:760px;margin:0 auto;padding:10px 12px 90px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
+input,select,textarea{width:100%;font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:9px;padding:10px;margin:4px 0 10px}
+textarea{min-height:90px;resize:vertical}
+button.p{background:var(--navy);color:#fff;border:0;border-radius:10px;padding:11px 16px;font-size:15px;font-weight:600}
+button.g{background:var(--green)}
+button.s{background:transparent;color:var(--blue);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:2px 0 8px}
+.chips button{white-space:nowrap}
+.chips button.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.row{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.t{font-weight:600}
+.m{color:var(--mute);font-size:13px}
+.badge{color:#fff;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:600;white-space:nowrap}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--red);margin-right:6px}
+.bub{border-radius:12px;padding:9px 11px;margin:8px 0;max-width:92%;white-space:pre-wrap;word-wrap:break-word}
+.bub.c{background:var(--bub-me)}.bub.d{background:var(--bub-dev);margin-left:auto}
+.bub small{display:block;color:var(--mute);font-size:12px;margin-bottom:2px}
+.bub img{max-width:100%;border-radius:8px;margin-top:6px;display:block}
+.bub a{color:var(--blue)}
+pre{white-space:pre-wrap;font:12px/1.4 ui-monospace,Consolas,monospace;color:var(--mute);margin:0}
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:8px 12px calc(8px + env(safe-area-inset-bottom))}
+.bar .in{max-width:760px;margin:0 auto}
+.err{color:var(--red);font-size:14px}
+.hide{display:none}
+</style>
+</head>
+<body>
+<header><h1 id="ttl">🎫 Support Inbox</h1><button id="back" class="hide">‹ Back</button><button id="out" class="hide">Sign out</button></header>
+<main id="main"></main>
+
+<script>
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+const el = (tag, props = {}, ...kids) => { const e = document.createElement(tag); for (const k in props) { if (k === "class") e.className = props[k]; else if (k.startsWith("on")) e.addEventListener(k.slice(2), props[k]); else e[k] = props[k]; } kids.flat().forEach(c => e.append(c)); return e; };
+const STATUSES = ["Open", "In progress", "Waiting for client", "Resolved", "Closed"];
+const COLORS = {"Open": "#c62828", "In progress": "#ef6c00", "Waiting for client": "#6a1b9a", "Resolved": "#2e7d32", "Closed": "#757575"};
+const CANNED = ["Thank you, we have received this and are checking.", "Please send a screenshot of the screen where this happens.", "This will be fixed in the next update. We will let you know.", "Fixed in the latest update - please click Help > Check for Updates and try again.", "Could you please call us so we can help you on the phone?"];
+const ls = { get(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }, del(k) { try { localStorage.removeItem(k); } catch (e) {} } };
+let cfg = { url: ls.get("sb_url"), key: ls.get("sb_key"), secret: ls.get("sb_secret") };
+let timer = null, filter = "Active", shopQ = "", curId = null;
+
+async function rpc(fn, args) {
+  const r = await fetch(cfg.url + "/rest/v1/rpc/" + fn, { method: "POST", headers: { apikey: cfg.key, Authorization: "Bearer " + cfg.key, "Content-Type": "application/json" }, body: JSON.stringify(args || {}) });
+  const txt = await r.text();
+  if (!r.ok) { let m = txt; try { m = JSON.parse(txt).message || txt; } catch (e) {} throw new Error(m); }
+  return txt ? JSON.parse(txt) : null;
+}
+async function upload(file) {
+  const safe = file.name.replace(/[^A-Za-z0-9._-]/g, "_") || "file";
+  const key = Math.random().toString(16).slice(2, 12) + "_" + safe;
+  const r = await fetch(cfg.url + "/storage/v1/object/support-files/" + key, { method: "POST", headers: { apikey: cfg.key, Authorization: "Bearer " + cfg.key, "Content-Type": file.type || "application/octet-stream", "x-upsert": "false" }, body: file });
+  if (!r.ok) throw new Error("upload failed: " + (await r.text()));
+  return { url: cfg.url + "/storage/v1/object/public/support-files/" + key, name: file.name };
+}
+const when = s => { try { return new Date(s).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }); } catch (e) { return s || ""; } };
+const tno = i => "SUP-" + String(i).padStart(4, "0");
+const kind = k => (k || "").split(" / ")[0];
+function stop() { if (timer) { clearInterval(timer); timer = null; } }
+function head(title, back, out) { $("#ttl").textContent = title; $("#back").classList.toggle("hide", !back); $("#out").classList.toggle("hide", !out); }
+$("#out").onclick = () => { stop(); ls.del("sb_secret"); cfg.secret = ""; login(); };
+$("#back").onclick = () => { curId = null; list(); };
+
+// ---------------- sign in ----------------
+function login(msg) {
+  stop(); head("🎫 Support Inbox", false, false);
+  const u = el("input", { value: cfg.url, placeholder: "https://xxxx.supabase.co", autocapitalize: "off" });
+  const k = el("input", { value: cfg.key, placeholder: "anon / public key", autocapitalize: "off" });
+  const s = el("input", { type: "password", placeholder: "admin secret (same as the chat admin)", value: cfg.secret });
+  const e = el("div", { class: "err" }, msg || "");
+  const go = el("button", { class: "p", textContent: "Sign in", onclick: async () => {
+    cfg = { url: u.value.trim().replace(/\/+$/, ""), key: k.value.trim(), secret: s.value.trim() };
+    go.disabled = true; e.textContent = "";
+    try { if (!(await rpc("admin_ok", { p_secret: cfg.secret }))) throw new Error("Wrong admin secret"); ls.set("sb_url", cfg.url); ls.set("sb_key", cfg.key); ls.set("sb_secret", cfg.secret); list(); }
+    catch (x) { e.textContent = String(x.message || x); go.disabled = false; }
+  } });
+  $("#main").replaceChildren(el("div", { class: "card" }, el("div", { class: "t" }, "Sign in (one time on this phone)"), el("div", { class: "m" }, "Supabase URL"), u, el("div", { class: "m" }, "Supabase anon key"), k, el("div", { class: "m" }, "Admin secret"), s, go, e));
+}
+
+// ---------------- list ----------------
+async function list() {
+  stop(); curId = null; head("🎫 Support Inbox", false, true);
+  const chips = el("div", { class: "chips" }, ["Active", "All", ...STATUSES].map(f => el("button", { class: "s" + (f === filter ? " on" : ""), textContent: f, onclick: () => { filter = f; list(); } })));
+  const q = el("input", { placeholder: "Search shop / title", value: shopQ, oninput: () => { shopQ = q.value; paint(); } });
+  const box = el("div");
+  $("#main").replaceChildren(chips, q, box);
+  let rows = [];
+  const paint = () => {
+    const f = shopQ.trim().toLowerCase();
+    const shown = rows.filter(r => !f || (r.shop + " " + r.title).toLowerCase().includes(f));
+    $("#ttl").textContent = "🎫 Inbox · " + shown.length + (rows.some(r => r.dev_unread) ? " · " + rows.filter(r => r.dev_unread).length + " new" : "");
+    box.replaceChildren(...(shown.length ? shown.map(r => el("div", { class: "card", style: "cursor:pointer", onclick: () => open(r.id) },
+      el("div", { class: "row" }, el("div", { class: "t" }, r.dev_unread ? el("span", { class: "dot" }) : "", tno(r.id) + "  " + r.shop), el("span", { class: "badge", style: "background:" + (COLORS[r.status] || "#555"), textContent: r.status })),
+      el("div", {}, r.title), el("div", { class: "m" }, kind(r.kind) + " · " + r.priority + " · " + when(r.updated_at)))) : [el("div", { class: "m", textContent: "No tickets." })]));
+  };
+  const load = async () => { try { rows = await rpc("admin_support_list", { p_secret: cfg.secret, p_status: filter }) || []; paint(); } catch (x) { box.replaceChildren(el("div", { class: "err" }, String(x.message || x))); } };
+  await load(); timer = setInterval(load, 30000);
+}
+
+// ---------------- one ticket ----------------
+async function open(id) {
+  stop(); curId = id; head(tno(id), true, false);
+  let draft = "";
+  const draw = async (keep) => {
+    let d; try { d = await rpc("admin_support_get", { p_secret: cfg.secret, p_id: id }); } catch (x) { $("#main").replaceChildren(el("div", { class: "err" }, String(x.message || x))); return; }
+    if (curId !== id) return;
+    const t = d.ticket, prev = $("#rt"); if (prev) draft = prev.value;
+    const bubble = (cls, who, ts, text, files) => el("div", { class: "bub " + cls }, el("small", {}, who + " · " + when(ts)), text || "",
+      (files || []).map(f => /\.(png|jpe?g|gif|webp)$/i.test(f.name) ? el("a", { href: f.url, target: "_blank" }, el("img", { src: f.url, alt: f.name })) : el("div", {}, el("a", { href: f.url, target: "_blank", rel: "noopener" }, "📎 " + f.name))));
+    const st = el("select", {}, STATUSES.map(s => el("option", { value: s, textContent: s, selected: s === t.status })));
+    st.onchange = async () => { try { await rpc("admin_support_reply", { p_secret: cfg.secret, p_id: id, p_body: "", p_files: [], p_status: st.value }); } catch (x) { alert(x.message); } };
+    const conv = el("div", {}, el("div", { class: "card" }, el("div", { class: "t" }, t.title), el("div", { class: "m" }, t.shop + " · " + t.user_name + " · " + kind(t.kind) + " · " + t.priority + (t.app_version ? " · " + t.app_version : "")), st),
+      bubble("c", t.shop, t.created_at, t.body, t.files), (d.messages || []).map(m => bubble(m.sender === "dev" ? "d" : "c", m.sender === "dev" ? "You" : t.shop, m.created_at, m.body, m.files)),
+      t.diag ? el("details", { class: "card" }, el("summary", { class: "m" }, "App info"), el("pre", {}, t.diag)) : "");
+    const ta = el("textarea", { id: "rt", placeholder: "Reply…", value: draft }); ta.style.margin = "0 0 6px"; ta.style.minHeight = "60px";
+    const files = el("input", { type: "file", multiple: true, class: "hide" });
+    const fl = el("span", { class: "m" });
+    files.onchange = () => { fl.textContent = files.files.length ? files.files.length + " file(s)" : ""; };
+    const quick = el("select", {}, el("option", { value: "", textContent: "Quick reply…" }), CANNED.map(c => el("option", { value: c, textContent: c.slice(0, 50) })));
+    quick.style.margin = "0 0 6px"; quick.onchange = () => { if (quick.value) { ta.value = quick.value; quick.value = ""; } };
+    const after = el("select", {}, el("option", { value: "", textContent: "keep status" }), STATUSES.map(s => el("option", { value: s, textContent: "→ " + s, selected: s === "Waiting for client" })));
+    after.style.width = "auto"; after.style.margin = "0";
+    const send = el("button", { class: "p g", textContent: "Send", onclick: async () => {
+      if (!ta.value.trim() && !files.files.length) return; send.disabled = true;
+      try { const up = []; for (const f of files.files) up.push(await upload(f)); await rpc("admin_support_reply", { p_secret: cfg.secret, p_id: id, p_body: ta.value.trim(), p_files: up, p_status: after.value }); ta.value = ""; draft = ""; await draw(); window.scrollTo(0, document.body.scrollHeight); }
+      catch (x) { alert(x.message || x); send.disabled = false; } } });
+    $("#main").replaceChildren(conv, el("div", { class: "bar" }, el("div", { class: "in" }, quick, ta, el("div", { class: "row" }, el("div", {}, el("button", { class: "s", textContent: "📎", onclick: () => files.click() }), files, " ", fl), el("div", { class: "row", style: "gap:8px" }, after, send)))));
+    if (!keep) window.scrollTo(0, 0);
+  };
+  await draw(false);
+  timer = setInterval(() => { const a = document.activeElement; if (a && a.id === "rt" && a.value) return; draw(true); }, 20000);
+}
+
+if (cfg.url && cfg.key && cfg.secret) list(); else login();
+</script>
+</body>
+</html>
